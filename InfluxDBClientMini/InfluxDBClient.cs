@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Threading;
 
 namespace InfluxDBClientMiniVersion
 {
@@ -13,6 +14,7 @@ namespace InfluxDBClientMiniVersion
         private string influxurl;
         private string dbusername;
         private string dbpassword;
+        private int retries;
 
 
         public void Dispose()
@@ -29,16 +31,17 @@ namespace InfluxDBClientMiniVersion
             }
         }
 
-        public InfluxDBClient(string InfluxUrl)
-            : this(InfluxUrl, null, null)
+        public InfluxDBClient(string InfluxUrl, int Retries = 3)
+            : this(InfluxUrl, null, null, Retries)
         {
 
         }
-        public InfluxDBClient(string InfluxUrl, string DBUserName, string DBPassowrd)
+        public InfluxDBClient(string InfluxUrl, string DBUserName, string DBPassowrd, int Retries = 3)
         {
             influxurl = InfluxUrl;
             dbusername = DBUserName;
             dbpassword = DBPassowrd;
+            retries = Retries;
 
             client = new HttpClient();
 
@@ -54,21 +57,22 @@ namespace InfluxDBClientMiniVersion
         {
             string url = string.Format("{0}/write?{1}", influxurl, urlparttern);
             ByteArrayContent bytesContent = new ByteArrayContent(Encoding.UTF8.GetBytes(lines));
-            try
+            int retry = 0;
+            while (retry < retries)
             {
-                HttpResponseMessage response = client.PostAsync(url, bytesContent).Result;
-                if (response.StatusCode == HttpStatusCode.NoContent)
+                retry++;
+                try
                 {
-                    return true;
+                    HttpResponseMessage response = client.PostAsync(url, bytesContent).Result;
+                    if (response.StatusCode == HttpStatusCode.NoContent)
+                    {
+                        return true;
+                    }
                 }
-                else
+                catch (Exception ex)
                 {
-                    Debug.Fail(response.StatusCode.ToString());
+                    Thread.Sleep(50);
                 }
-            }
-            catch (Exception ex)
-            {
-                Debug.Fail(ex.ToString());
             }
             return false;
         }
@@ -78,20 +82,68 @@ namespace InfluxDBClientMiniVersion
             try
             {
                 HttpResponseMessage response = client.GetAsync(url, completion).Result;
-                if (response.StatusCode == HttpStatusCode.OK)
+
+                if (response != null && response.StatusCode == HttpStatusCode.OK)
                 {
                     return response;
-                }
-                else
-                {
-                    Debug.Fail(response.StatusCode.ToString());
                 }
             }
             catch (Exception ex)
             {
-                Debug.Fail(ex.ToString());
             }
             return null;
         }
+    }
+    public static class InfluxDBExtensions
+    {
+        static readonly DateTime Origin = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        public static DateTime FromEpoch(this string time, TimePrecision precision)
+        {
+            long duration = long.Parse(time);
+            DateTime t = Origin;
+            switch (precision)
+            {
+                case TimePrecision.Hours: return t.AddHours(duration);
+                case TimePrecision.Minutes: return t.AddMinutes(duration);
+                case TimePrecision.Seconds: return t.AddSeconds(duration);
+                case TimePrecision.Milliseconds: return t.AddMilliseconds(duration);
+                case TimePrecision.Microseconds: return t.AddTicks(duration * TimeSpan.TicksPerMillisecond * 1000);
+                case TimePrecision.Nanoseconds: return t.AddTicks(duration / 100); //1 tick = 100 nano sec
+            }
+            return t;
+        }
+
+        public static long ToEpoch(this DateTime time, TimePrecision precision)
+        {
+            TimeSpan t = time - Origin;
+            switch (precision)
+            {
+                case TimePrecision.Hours: return (long)t.TotalHours;
+                case TimePrecision.Minutes: return (long)t.TotalMinutes;
+                case TimePrecision.Seconds: return (long)t.TotalSeconds;
+                case TimePrecision.Milliseconds: return (long)t.TotalMilliseconds;
+                case TimePrecision.Microseconds: return (long)(t.TotalMilliseconds * 1000);
+                case TimePrecision.Nanoseconds:
+                default: return (long)t.Ticks * 100; //1 tick = 100 nano sec
+            }
+        }
+        public static string EscapeTag(this string value)
+        {
+            if (!string.IsNullOrEmpty(value))
+            {
+                return value.Replace(' ', '_').Replace("\\", "\\\\");
+            }
+            return "";
+        }
+    }
+
+    public enum TimePrecision
+    {
+        Hours = 1,
+        Minutes = 2,
+        Seconds = 3,
+        Milliseconds = 4,
+        Microseconds = 5,
+        Nanoseconds = 6
     }
 }
