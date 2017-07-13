@@ -56,13 +56,13 @@ namespace InfluxDBClientMiniVersion
         public bool Write(string urlparttern, string lines)
         {
             string url = string.Format("{0}/write?{1}", influxurl, urlparttern);
-            ByteArrayContent bytesContent = new ByteArrayContent(Encoding.UTF8.GetBytes(lines));
             int retry = 0;
             while (retry < retries)
             {
                 retry++;
                 try
                 {
+                    ByteArrayContent bytesContent = new ByteArrayContent(Encoding.UTF8.GetBytes(lines));
                     HttpResponseMessage response = client.PostAsync(url, bytesContent).Result;
                     if (response.StatusCode == HttpStatusCode.NoContent)
                     {
@@ -97,25 +97,9 @@ namespace InfluxDBClientMiniVersion
     public static class InfluxDBExtensions
     {
         static readonly DateTime Origin = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        public static DateTime FromEpoch(this string time, TimePrecision precision)
-        {
-            long duration = long.Parse(time);
-            DateTime t = Origin;
-            switch (precision)
-            {
-                case TimePrecision.Hours: return t.AddHours(duration);
-                case TimePrecision.Minutes: return t.AddMinutes(duration);
-                case TimePrecision.Seconds: return t.AddSeconds(duration);
-                case TimePrecision.Milliseconds: return t.AddMilliseconds(duration);
-                case TimePrecision.Microseconds: return t.AddTicks(duration * TimeSpan.TicksPerMillisecond * 1000);
-                case TimePrecision.Nanoseconds: return t.AddTicks(duration / 100); //1 tick = 100 nano sec
-            }
-            return t;
-        }
-
         public static long ToEpoch(this DateTime time, TimePrecision precision)
         {
-            TimeSpan t = time - Origin;
+            TimeSpan t = time.ToUniversalTime() - Origin;
             switch (precision)
             {
                 case TimePrecision.Hours: return (long)t.TotalHours;
@@ -136,7 +120,6 @@ namespace InfluxDBClientMiniVersion
             return "";
         }
     }
-
     public enum TimePrecision
     {
         Hours = 1,
