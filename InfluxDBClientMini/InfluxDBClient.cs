@@ -57,12 +57,13 @@ namespace InfluxDBClientMiniVersion
         {
             string url = string.Format("{0}/write?{1}", influxurl, urlparttern);
             int retry = 0;
+            byte[] postdata = Encoding.UTF8.GetBytes(lines);
             while (retry < retries)
             {
                 retry++;
                 try
                 {
-                    ByteArrayContent bytesContent = new ByteArrayContent(Encoding.UTF8.GetBytes(lines));
+                    ByteArrayContent bytesContent = new ByteArrayContent(postdata);
                     HttpResponseMessage response = client.PostAsync(url, bytesContent).Result;
                     if (response.StatusCode == HttpStatusCode.NoContent)
                     {
